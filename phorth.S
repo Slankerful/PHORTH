@@ -1,5 +1,6 @@
 #include <asm/unistd.h>
 
+.arch armv6
 .cpu cortex-a53
 .fpu neon-fp-armv8
 .section forthcode,"axw"
@@ -9,6 +10,8 @@ DSP .req    r13
 RSP .req    r11
 @ Forth word instruction pointer
 FIP .req    r10
+@ Floating Point Stack
+FSP .req    r12
 .set F_IMM,0x80000000       @ Immediate bit
 .set F_LEN,0x0FFFFFFF       @ Mask to give only length
 .set F_SMG,0x40000000       @ Smudge bit
@@ -28,6 +31,16 @@ ldr \reg,[DSP],#4
 
 .macro pop2dsp
 ldmia DSP!,{r0-r1}
+.endm
+
+.macro pushfsp reg
+sub FSP,FSP,#8
+vstr \reg,[FSP]
+.endm
+
+.macro popfsp reg
+vldr \reg,[FSP]
+add FSP,FSP,#8
 .endm
 
 .macro pushrsp reg
@@ -247,8 +260,9 @@ defvar "CURRENT",7,,current,f_wordlist  @ wordlist for compilation
 @ So CURRENT @ gives that address and CURRENT @ @ gives the lfa of the latest word in that wordlist
 @ Initially things are set up so that it contains the address of the FORTH wordlist which in turn
 @ has the link field address (lfa) of THROW
-defvar "SP0",3,,sp0    @top of data stack
-defvar "RP0",3,,rp0
+defvar "SP0",3,,sp0     @start of data stack
+defvar "RP0",3,,rp0     @ start of return stack
+defvar "FP0",3,,fp0     @ start of floating point stack
 defvar "BASE",4,,base,10    @numeric base for reading/writing numbers @ Core
 defvar ">IN",3,,toin,0 @ Core
 defvar "EOL",3,,eol,0       @ Indicates an end-of-line detected by WORD
@@ -2383,6 +2397,13 @@ defword "COMPILE,",8,F_CON,compilecomma @ Core Ext
 @ Execution: ( xt -- )
 @   Append the execution semantics of the definition represented by 'xt' to the
 @   execution semantics of the current definition.
+@ In this simple implementation, it's equivalent to , but could be made more
+@ sophisticated to cater for further optimisation.
+@ Example:
+@ : noname dup + ; constant dup+
+@ : comp-dup+ dup+ compile,
+@ : do-it [ comp-dup+ ] ;
+@ 142 do-it -> 284
 .int comma
 .int exit
 
@@ -2443,6 +2464,9 @@ str DSP,[r0]
 ldr RSP,=rs_top
 ldr r0,=var_rp0
 str RSP,[r0]
+ldr FSP,=fsp_top
+ldr r0,=var_fp0
+str FSP,[r0]
 ldr r0,=ds
 ldr r1,=value_here
 str r0,[r1]
@@ -2450,8 +2474,8 @@ ldr FIP,=cold_start
 next
 
 cold_start:
-.int lits, 15
-.ascii "PHORTH (c) 2021"
+.int lits, 16
+.ascii "PHORTH V2.0 2024"
 .align 2
 .int type
 .int cr
@@ -2480,7 +2504,7 @@ pushrsp r1
 pushrsp r0
 next
 
-defcode "2R>",3,F_CON,tworto @ Core
+defcode "2R>",3,F_CON,tworto @ Core Ext
 @ ( -- x1 x2 ) ( R: x1 x2 -- )
 @ Transfer cell pair x1 x2 from the return stack
 @ onto the data stack.
@@ -3399,7 +3423,9 @@ defcode "CR",2,,cr @ Core
 @ Cause subsequent output to appear at the begining of
 @ the next line.
 mov r0,#'\n'
+stmfd sp!,{r12}
 bl putchar
+ldmfd sp!,{r12}
 next
 
 defcode "LIT",3,,lit
@@ -3477,20 +3503,26 @@ defword ".(",2,F_IMM,dotcomment @ Core Ext
 defcode "KEY",3,,key @ Core
 @ ( -- char )
 @ Receive one character char.
+stmfd sp!,{r12}
 bl setattr
 _rekey:
 bl getchar
 cmp r0,#127
 bgt _rekey
+ldmfd sp!,{r12}
 pushdsp r0
+stmfd sp!,{r12}
 bl resetattr
+ldmfd sp!,{r12}
 next
 
 defcode "EMIT",4,,emit @ Core
 @ ( x -- )
 @ Display a character x on the display device
 popdsp r0
+stmfd sp!,{r12}
 bl putchar
+ldmfd sp!,{r12}
 next
 
 defword "CHAR",4,,char @ Core
@@ -3720,7 +3752,9 @@ defcode "ACCEPT",6,,accept @ Core
 @ +n2 is the length of the string stored at c-addr
 popdsp r6       @ Max count
 popdsp r4       @ Address to move line into
+stmfd sp!,{r12}
 bl term_input   @ Read a line from keyboard - r0 contains address of buffer that was allocated
+ldmfd sp!,{r12}
 mov r5,r0       @ Store buffer address away for later free
 mov r2,#0       @ set up for count
 _readline_count:
@@ -4102,7 +4136,7 @@ bl _type
 next
 
 _type:
-stmfd sp!,{r4-r5,lr}
+stmfd sp!,{r4-r5,r12,lr}
 mov r4,r0       @address
 mov r5,r1       @length
 _type1:
@@ -4110,7 +4144,7 @@ subs r5,r5,#1
 ldrgeb r0,[r4],#1
 blge putchar
 bge _type1
-ldmfd sp!,{r4-r5,pc}  
+ldmfd sp!,{r4-r5,r12,pc}  
 
 defword "MS",2,,ms              @ ( +n -- )
 .int lit,1000
@@ -4120,7 +4154,9 @@ defword "MS",2,,ms              @ ( +n -- )
 
 defcode "MICROSEC",8,,microsec  @ ( +n -- )
 popdsp r0
+stmfd sp!,{r12}
 bl usleep
+ldmfd sp!,{r12}
 next
 
 @ defcode "PARSE",5,,parse @ Core Ext
@@ -4320,7 +4356,9 @@ ldmfd sp!,{r4,r5,pc}
 defcode "ASCIIZ",6,,asciiz
 popdsp r1
 popdsp r0
+stmfd sp!,{r12}
 bl _cstring
+ldmfd sp!,{r12}
 pushdsp r0
 next
 
@@ -5283,11 +5321,58 @@ defword "CATCH",5,,catch @ Exception
 .int zero
 .int exit
 
+defcode "D>F",3,,dtof   @ Floating
+@ ( d -- ) ( F: -- r )
+@ r is the floating point equivalent of d.
+pop2dsp
+vmov d0,r1,r0
+pushfsp d0
+next
+
+defcode "F>D",3,,ftod   @ Floating
+@ ( -- d ) ( F: r -- )
+@ d is the double-cell signed-integer equivalent of the
+@ integer portion of r.
+popfsp d0
+vmov r1,r0,d0
+push2dsp
+next
+
+defcode "F+",2,,fplus   @ Floating
+@ ( f: r1 r2 -- r3 )
+@ Add r2 to r2 giving the sum r3
+popfsp d0
+popfsp d1
+vadd.f64 d0,d0,d1
+pushfsp d0
+next
+
 defword "THROW",5,,throw @ Exception
 @ ( k*x n -- k*x|i*x n )
-@ 
+@ If any bits of n are non-zero, pop the topmost exception frame
+@ from the exception stack along with anything on the return stack
+@ above that frame.
+@ : THROW
+@   ?DUP
+@   IF
+@       DUP
+@       -1 =
+@       IF ABORTCORE THEN
+@       DUP
+@       -2 =
+@       IF
+@           DROP TYPE
+@           SP0 @ SP!       \ Reset stack pointer
+@           QUIT
+@       THEN
+@       THROWFRAME @ RP!    \ Restore previous return stack
+@       R> THROWFRAME !     \ Restore previous exception frame
+@       R> SWAP >R          \ Get saved stack pointer and put exception number on return stack
+@       SP! DROP R>         \ Restore stack and exception number§
+@   THEN
+@ ;
 .int qdup
-.int zbranch,116
+.int zbranch,120
 .int dup
 .int minus1
 .int eq
@@ -5296,7 +5381,8 @@ defword "THROW",5,,throw @ Exception
 .int dup
 .int minus2
 .int eq
-.int zbranch,24
+.int zbranch,28
+.int drop
 .int type
 .int sp0,fetch,spstore
 .int quit
@@ -5312,6 +5398,13 @@ defword "THROW",5,,throw @ Exception
 ds:
 .space data_size
 ds_top:
+
+.bss
+.align 5
+.set fp_size, 0x400
+fsp:
+.space fp_size
+fsp_top:
 
 .bss
 .align 5

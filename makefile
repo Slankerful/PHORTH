@@ -1,5 +1,5 @@
 phorth: phorth.S setattr.o resetattr.o term_input.o
-	gcc -g -o phorth phorth.S setattr.o term_input.o resetattr.o -lreadline
+	gcc -g -o phorth  phorth.S setattr.o term_input.o resetattr.o -lreadline
 
 setattr.o: setattr.c
 	gcc -c setattr.c
