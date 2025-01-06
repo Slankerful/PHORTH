@@ -34,13 +34,13 @@ ldmia DSP!,{r0-r1}
 .endm
 
 .macro pushfsp reg
-sub FSP,FSP,#8
+sub FSP,FSP,#4
 vstr \reg,[FSP]
 .endm
 
 .macro popfsp reg
 vldr \reg,[FSP]
-add FSP,FSP,#8
+add FSP,FSP,#4
 .endm
 
 .macro pushrsp reg
@@ -420,6 +420,12 @@ defcode "EXIT",4,F_CON,exit @ Core
 @ Execution:
 @ ( -- ) ( R: nest-sys -- )
 @ Return control to the calling definition specified by nest-sys
+poprsp FIP
+next
+
+defcode "EXIT2",5,F_CON,exit2
+@ Used purely as an alternative exit in the middle of words
+@ so that 'see' can correctly identify the end of a word.
 poprsp FIP
 next
 
@@ -1368,7 +1374,7 @@ defword "FM/MOD",6,,fmmod @ Core
 .int zbranch,16
 .int lit,-11
 .int throw
-.int exit
+.int exit2
 .int rto,drop
 .int dup,zlt
 .int zbranch,16
@@ -1413,7 +1419,7 @@ defword "SM/REM",6,,smrem @ Core
 .int zero,over
 .int lt,zeq
 .int zbranch,8
-.int exit
+.int exit2
 .int lit,-11
 .int throw
 .int dup,zlt
@@ -1892,7 +1898,7 @@ defword "S\"",2,F_IMM,squote @ Core
 .int swap,move      @ ( len )
 .int allot
 .int align
-.int exit
+.int exit2
 .int tuck,here,swap  @ ( addr len -- len addr here len ) Store away at here
 .int move
 .int here,swap
@@ -2449,7 +2455,7 @@ defword "POSTPONE",8,F_IMM | F_CON,postpone @ Core
 .int lit
 .int comma
 .int comma                  @ and compile in ,
-.int exit
+.int exit2
 .int comma                  @ if immediate word just compile in xt
 .int exit
 
@@ -2890,7 +2896,7 @@ defword ">NUMBER",7,,tonumber @ Core
 .int lit,65,within
 .int zbranch,20
 .int drop,rto,rto
-.int exit
+.int exit2
 .int lit,48,minus
 .int lit,9
 .int over,lt
@@ -2907,7 +2913,7 @@ defword ">NUMBER",7,,tonumber @ Core
 .int dplus
 .int rto,rto,one,sstring
 .int branch,20
-.int drop,rto,rto,exit
+.int drop,rto,rto,exit2
 .int branch,-276
 .int exit
 
@@ -2934,7 +2940,7 @@ defword "(NUMBER?)",9,,pnumberq        @ ( c-addr u -- 0 | n 1 | d 2 )
 .int or
 .int zbranch,24
 .int twodrop,rto
-.int drop,zero,exit
+.int drop,zero,exit2
 .int rto
 .int zbranch,8
 .int dnegate
@@ -2994,7 +3000,7 @@ defword "(')",3,,ptick
 .int find
 .int qdup
 .int zbranch,8
-.int exit
+.int exit2
 .int lit,-13
 .int throw
 
@@ -3039,7 +3045,7 @@ defword "FIND",4,,find @ Core @ Search
 .int qdup
 .int zbranch,20
 .int nip,rot,drop       @ ( xt -1 | 1 )
-.int exit
+.int exit2
 .int twodrop,zero
 .int exit
 
@@ -3098,7 +3104,7 @@ defword "(SEARCH-WORDLIST)",17,,psearchwordlist
 .int f_cmponly,and
 .int zne,swap               @ ( --- lfa flag -1 | 1 )
 .int rot,tcfa,nrot          @ ( --- xt flag )
-.int exit
+.int exit2
 .int twodup                 @ ( --- c-addr u c-addr u )
 .int rto                    @ ( --- c-addr u c-addr u lfa ) retrieve the lfa
 .int fetch                  @ ( --- c-addr u c-addr u prevlfa ) Get the previous lfa in the dictionary
@@ -3163,7 +3169,7 @@ defword "SEARCH-WORD",11,,searchword @ (c-addr u -- c-addr u 0 | xt f -1 | xt f 
 .int tor,twoswap
 .int twodrop,rto
 .int unloop
-.int exit
+.int exit2
 .int ploop,-72
 .int zero
 .int exit
@@ -3568,7 +3574,7 @@ defword "SPACES",6,,spaces @ Core
 .int space
 .int ploop
 .int -8
-.int exit
+.int exit2
 .int drop
 .int exit
 @.int qdup
@@ -3683,7 +3689,7 @@ defword "REFILL",6,,refill @ Core Ext @ File Ext
 .int lit,-1,eq
 .int zbranch,12
 .int false
-.int exit
+.int exit2
 .int source                     @ ( c-addr len )
 .int twodup
 .int lit
@@ -3701,7 +3707,7 @@ defword "REFILL",6,,refill @ Core Ext @ File Ext
 .int eq
 .int zbranch,12
 .int false
-.int exit
+.int exit2
 .int zero
 .int toin
 .int store
@@ -3954,7 +3960,7 @@ defword "CREATE",6,,create @ Core
 @   here swap           ( u c-addr-from c-addr-to u ) \ Set up for move
 @   move                \ move the string into dataspace
 @   allot align         \ Reserve space for the moved string in the name field
-@   (dodoes) ,          \ Compile in code to to a basic DOES (i.e. put pfa onto stack)
+@   var_dodoes ,          \ Compile in code to to a basic DOES (i.e. put pfa onto stack)
 @ ;
 .int align
 .int latest
@@ -3970,7 +3976,7 @@ defword "CREATE",6,,create @ Core
 .int move           
 .int allot
 .int align
-.int bdodoes
+.int vardodoes
 .int comma
 .int exit
 
@@ -3993,8 +3999,11 @@ defword "CELLS",5,,cells @ Core
 .int times
 .int exit
 
-defconst "(DODOES)",8,,bdodoes,var_dodoes
+defconst "VAR_DODOES",10,,vardodoes,var_dodoes
+defconst "2VAR_DODOES",11,,twovardodoes,twovar_dodoes
 defconst "_DODOES",7,,udodoes,_dodoes
+defconst "CONST_DODOES",12,,constdodoes,const_dodoes
+defconst "2CONST_DODOES",13,,twoconstdodoes,twoconst_dodoes
 
 defword "VARIABLE",8,,variable @ Core
 @ ( "<spaces>name" -- )
@@ -4024,8 +4033,10 @@ defword "2VARIABLE",9,,twovariable @ Double
 @ a-addr is the address of the first (lowest address) cell
 @ of two consecutive cells in data space.
 .int create
-.int lit,8
-.int allot
+.int two,cells,allot
+.int bdoes
+twovar_dodoes:
+bl _dodoes
 .int exit
 
 defword "CONSTANT",8,,constant @ Core
@@ -4050,6 +4061,7 @@ defword "2CONSTANT",9,,twoconstant @ Double
 .int create
 .int comma,comma
 .int bdoes
+twoconst_dodoes:
 bl _dodoes
 .int twofetch
 .int exit
@@ -4372,11 +4384,15 @@ popdsp r1           @ length
 popdsp r0           @ address of string
 bl _cstring         @ Convert to a C-style 0x00 delimited string
 mov r1,r4           @ Put back file access method
+stmfd sp!,{r12}
 bl fopen
+ldmfd sp!,{r12}
 pushdsp r0
 mov r1,#0
 cmp r0,#0
+stmfd sp!,{r12}
 bleq __errno_location
+ldmfd sp!,{r12}
 ldreq r1,[r0]
 pushdsp r1
 next
@@ -4386,10 +4402,14 @@ defcode "CLOSE-FILE",10,,closefile @ File
 @ Close the file identified by fileid. ior is the
 @ impementation defined I/O result code.
 popdsp r0
+stmfd sp!,{r12}
 bl fclose
+ldmfd sp!,{r12}
 mov r1,#0
 cmp r0,#0
+stmfd sp!,{r12}
 blne __errno_location
+ldmfd sp!,{r12}
 ldrne r1,[r0]
 pushdsp r1
 next
@@ -4403,15 +4423,21 @@ popdsp r3           @ file id
 popdsp r2           @ count
 popdsp r0           @ buffer
 mov r1,#1
+stmfd sp!,{r12}
 bl fread
+ldmfd sp!,{r12}
 pushdsp r0
+stmfd sp!,{r12}
 bl __errno_location
+ldmfd sp!,{r12}
 ldr r1,[r0]
 pushdsp r1
 next
 
 defcode "GETLINE",7,,getline        @ ( c-addr u1 fileid -- u2 ior )
+stmfd sp!,{r12}
 bl __errno_location @ Reset errno to zero
+ldmfd sp!,{r12}
 mov r1,#0
 str r1,[r0]
 popdsp r2           @ fileid
@@ -4421,14 +4447,20 @@ popdsp r0           @ address of buffer
 mov r4,r0           @ Save address
 mov r5,r2           @ Save fileid 
 mov r0,r2
+stmfd sp!,{r12}
 bl fileno
+ldmfd sp!,{r12}
 cmp r0,#-1
 beq _getline_err
 mov r2,r5
 mov r0,r4
+stmfd sp!,{r12}
 bl fgets
+ldmfd sp!,{r12}
 cmp r0,#0           @ 0 indicates end-of-file or error
+stmfd sp!,{r12}
 bleq __errno_location
+ldmfd sp!,{r12}
 ldreq r1,[r0]
 moveq r2,#0
 beq _getline_exit
@@ -4459,7 +4491,9 @@ pushdsp r1
 next
 _getline_err:
 pushdsp r0
+stmfd sp!,{r12}
 bl __errno_location
+ldmfd sp!,{r12}
 ldr r1,[r0]
 pushdsp r1
 next
@@ -4483,13 +4517,13 @@ defword "READ-LINE",9,,read_line @ File
 .int zbranch,28
 .int twodrop,drop
 .int zero,zero,zero
-.int exit
+.int exit2
 .int getline                        @ ( u2 ior )
 .int dup                            @ ( u2 ior ior )
 .int zbranch,16                     @ ior = 0, no error
 .int false
 .int swap                       
-.int exit
+.int exit2
 .int true
 .int swap
 .int exit
@@ -4602,14 +4636,20 @@ defcode "FILE-POSITION",13,,fileposition @ File
 @ by fileid. ior is the implementation defined I/O result.
 popdsp r0
 mov r4,r0
+stmfd sp!,{r12}
 bl fileno
+ldmfd sp!,{r12}
 cmp r0,#-1
 movne r0,r4
+stmfd sp!,{r12}
 blne ftell
+ldmfd sp!,{r12}
 pushdsp r0
 mov r1,#0
 pushdsp r1
+stmfd sp!,{r12}
 bl __errno_location
+ldmfd sp!,{r12}
 ldr r1,[r0]
 pushdsp r1
 next
@@ -4623,11 +4663,15 @@ popdsp r1           @ Discard high portion
 popdsp r1           @ New position
 mov r2,#0           @ SEEK_SET
 mov r4,r0
+stmfd sp!,{r12}
 bl fileno
+ldmfd sp!,{r12}
 cmp r0,#-1
 movne r0,r4
+stmfd sp!,{r12}
 blne fseek
 bl __errno_location
+ldmfd sp!,{r12}
 ldr r1,[r0]
 pushdsp r1
 next
@@ -4638,31 +4682,43 @@ defcode "FILE-SIZE",9,,filesize @ File
 @ ior is the implementation defined I/O result code.
 popdsp r0           @ file id
 mov r4,r0           @ Save fileid 
+stmfd sp!,{r12}
 bl fileno
+ldmfd sp!,{r12}
 cmp r0,#-1
 beq _filesize_err
 mov r0,r4
+stmfd sp!,{r12}
 bl ftell            @ Get current position
+ldmfd sp!,{r12}
 mov r5,r0           @ Save position
 mov r0,r4           @ Restore fileid
 mov r1,#0           @ cell offset
 mov r2,#2           @ SEEK_END
+stmfd sp!,{r12}
 bl fseek            @ Set to end of file
+ldmfd sp!,{r12}
 mov r0,r4           @ Restore file id
+stmfd sp!,{r12}
 bl ftell
+ldmfd sp!,{r12}
 pushdsp r0
 mov r1,#0
 pushdsp r1
 mov r0,r4           @ Restore fileid
 mov r1,r5           @ Restore position
 mov r2,#0
+stmfd sp!,{r12}
 bl fseek            @ Reset file position
+ldmfd sp!,{r12}
 b _filesize_ok
 _filesize_err:
 pushdsp r0
 pushdsp r0
 _filesize_ok:
+stmfd sp!,{r12}
 bl __errno_location
+ldmfd sp!,{r12}
 ldr r1,[r0]
 pushdsp r1
 next
@@ -4858,7 +4914,7 @@ defword "SET-ORDER",9,,setorder @ Search
 .int hashorder,cellplus
 .int plus,store
 .int ploop,-28
-.int exit
+.int exit2
 .int dup,zeq
 .int zbranch,16
 .int zero,hashorder,store
@@ -5010,7 +5066,7 @@ defword "TRAVERSE-WORDLIST",17,,traverse_wordlist   @ Tools Ext
 .int rto,rto
 .int rot,not
 .int zbranch,12
-.int twodrop,exit
+.int twodrop,exit2
 .int branch,-84
 .int drop
 .int exit
@@ -5038,7 +5094,7 @@ defword "XT>LINK",7,,xtolink
 .int lt
 .int zbranch,12
 .int nip
-.int exit
+.int exit2
 .int fetch
 .int branch,-48
 .int drop
@@ -5249,7 +5305,9 @@ bl _dodoes
 defcode "OPENMEM",7,,openmem
 ldr r0,=mem_file
 ldr r1,memflags
+stmfd sp!,{r12}
 bl open
+ldmfd sp!,{r12}
 pushdsp r0
 next
 mem_file:
@@ -5259,13 +5317,17 @@ memflags:
 
 defcode "CLOSEMEM",8,,closemem
 popdsp r0
+stmfd sp!,{r12}
 bl close
+ldmfd sp!,{r12}
 pushdsp r0
 next
 
 defcode "ALLOCATE",8,,allocate          @ ( u -- a-aadr ior )
 popdsp r0
+stmfd sp!,{r12}
 bl malloc
+ldmfd sp!,{r12}
 cmp r0,#0
 moveq r1,#-1
 movne r1,#0
@@ -5275,7 +5337,9 @@ next
 
 defcode "FREE",4,,myfree
 popdsp r0
+stmfd sp!,{r12}
 bl free
+ldmfd sp!,{r12}
 mov r0,#0
 pushdsp r0
 next
@@ -5291,7 +5355,9 @@ pushdsp r3      @ 6th parameter to mmap
 pushdsp r2      @ fd is 5th param
 mov r3,#1       @ flags
 mov r2,#3       @ prot
+vmov s7,r12
 bl mmap
+vmov r12,s7
 add sp,sp,#8
 pushdsp r0
 next
@@ -5321,30 +5387,105 @@ defword "CATCH",5,,catch @ Exception
 .int zero
 .int exit
 
-defcode "D>F",3,,dtof   @ Floating
-@ ( d -- ) ( F: -- r )
-@ r is the floating point equivalent of d.
-pop2dsp
-vmov d0,r1,r0
-pushfsp d0
+defcode "S>F",3,,stof   @ Floating
+@ ( n -- ) ( F: -- r )
+@ r is the floating point equivalent of n.
+popdsp r0
+vmov s12,r0
+vcvt.f32.s32 s7,s12
+pushfsp s7
 next
 
-defcode "F>D",3,,ftod   @ Floating
+defcode "F>S",3,,ftos   @ Floating
 @ ( -- d ) ( F: r -- )
-@ d is the double-cell signed-integer equivalent of the
+@ n is the single-cell signed-integer equivalent of the
 @ integer portion of r.
-popfsp d0
-vmov r1,r0,d0
-push2dsp
+popfsp s7
+vcvt.s32.f32 s12,s7
+vmov r0,s12
+pushdsp r0
 next
+
+defcode "F.",2,,fdot    @ Floating Ext
+@ ( F: r -- )
+@ Display, with trailing space, the top number on the flaoting point stack
+@ in fixed-point notation
+popfsp s12
+vcvt.f64.f32 d7,s12
+vmov r2,r3,d7
+ldr r0,=fp_string
+vmov s7,r12
+bl printf
+vmov r12,s7
+next
+fp_string:
+.asciz "%f "
+
+defcode "FS.",3,,fdots    @ Floating Ext
+@ ( F: r -- )
+@ Display, with trailing space, the top number on the flaoting point stack
+@ in scientific notation
+popfsp s12
+vcvt.f64.f32 d7,s12
+vmov r2,r3,d7
+ldr r0,=fpe_string
+vmov s7,r12
+bl printf
+vmov r12,s7
+next
+fpe_string:
+.asciz "%E "
 
 defcode "F+",2,,fplus   @ Floating
-@ ( f: r1 r2 -- r3 )
+@ ( ~f: r1 r2 -- r3 )
 @ Add r2 to r2 giving the sum r3
-popfsp d0
-popfsp d1
-vadd.f64 d0,d0,d1
-pushfsp d0
+popfsp s0
+popfsp s2
+vadd.f32 s4,s0,s2
+pushfsp s4
+next
+
+defcode "F-",2,,fminus  @ Floating
+@ ( F: r1 r2 -- r3 )
+@ Subtract r2 from r1 giving r3
+popfsp s0
+popfsp s2
+vsub.f32 s4,s2,s0
+pushfsp s4
+next
+
+defcode "F*",2,,ftimes
+@ ( F: r1 r2 -- r3 )
+@ Multiply r1 by r2 giving r3
+popfsp s0
+popfsp s2
+vmul.f32 s4,s0,s2
+pushfsp s4
+next
+
+defcode "F/",2,,fdiv    @ Floating
+@ ( F: r1 r2 -- r3)
+@ Divide r1 by r2 giving the quotient r3.
+popfsp s0
+popfsp s2
+vdiv.f32 s4,s2,s0
+pushfsp s4
+next
+
+defcode "FSQRT",5,,fsqrt    @ Floating Ext
+@ ( F: r1 -- r2 )
+@ r2 is the square root of r1
+popfsp s0
+vsqrt.f32 s2,s0
+pushfsp s2
+next
+
+defcode "FDUP",4,,fdup  @ Floating
+@ ( F: r -- r r )
+@ Duplicate r
+popfsp s0
+pushfsp s0
+pushfsp s0
 next
 
 defword "THROW",5,,throw @ Exception
